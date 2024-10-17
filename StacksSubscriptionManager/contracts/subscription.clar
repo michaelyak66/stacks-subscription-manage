@@ -1,3 +1,15 @@
+;; Manages subscriptions for users, allowing them to subscribe and renew their subscriptions.
+;; 
+;; The `subscriptions` map stores the subscription details for each user, including the end time of the subscription and the number of tokens locked.
+;; 
+;; The `subscribe` function allows a user to subscribe by providing an amount of tokens to lock. The subscription will last for 30 days.
+;; 
+;; The `renew` function allows a user to renew their existing subscription, extending the end time by an additional 30 days.
+;; 
+;; The `get-subscription` function retrieves the subscription details for a given user.
+;; 
+;; The `is-active` function checks if a user's subscription is still active.
+
 (define-map subscriptions 
   { user: principal } 
   { end-time: uint, tokens-locked: uint })
