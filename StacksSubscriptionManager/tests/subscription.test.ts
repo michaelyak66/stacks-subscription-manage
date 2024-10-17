@@ -1,3 +1,17 @@
+/**
+ * This module provides a mock implementation of a subscription contract, including functions to subscribe, renew, and check the status of a subscription.
+ * 
+ * The subscription contract is represented by a `Subscription` type, which includes the end time of the subscription and the amount of tokens locked.
+ * 
+ * The main functions provided are:
+ * - `subscribe(user: string, amount: number)`: Allows a user to subscribe to the contract, locking the specified amount of tokens for a 30-day period.
+ * - `renew(user: string)`: Allows a user to renew their active subscription, extending the end time by another 30 days.
+ * - `getSubscription(user: string)`: Returns the current subscription details for the specified user, or `null` if they have no active subscription.
+ * - `isActive(user: string)`: Checks whether the user has an active subscription.
+ * 
+ * This implementation is intended for testing purposes and uses an in-memory `Map` to store the subscription details.
+ */
+
 import { describe, it, expect, beforeEach } from 'vitest';
 
 
