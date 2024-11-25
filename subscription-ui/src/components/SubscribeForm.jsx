@@ -7,6 +7,7 @@ const SubscribeForm = () => {
   const [amount, setAmount] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false); // Loading state
+
   const contractAddress = "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM"; // Local deployer address
   const contractName = "subscription";
 
@@ -46,6 +47,7 @@ const SubscribeForm = () => {
         contractName: contractName, // Replace with your contract name
         functionName: "subscribe",
         functionArgs: serializedArgs,
+
         // postConditionMode: 0x01, // Specify post-condition mode (optional)
         onFinish: (data) => {
           console.log("Transaction finished:", data);
