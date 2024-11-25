@@ -4,7 +4,7 @@
 ;; 
 ;; The `subscribe` function allows a user to subscribe by providing an amount of tokens to lock. The subscription will last for 30 days.
 ;; 
-;; The `renew` function allows a user to renew their existing subscription, extending the end time by an additional 30 days.
+;; The `renew` function allows a user to renew their existing subscription, extending the end time by an additional 30 days..
 ;; 
 ;; The `get-subscription` function retrieves the subscription details for a given user.
 ;; 
