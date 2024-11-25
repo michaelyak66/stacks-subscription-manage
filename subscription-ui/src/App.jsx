@@ -6,8 +6,6 @@ import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Subscribe from "./pages/Subscribe";
-import Renew from './pages/Renew';
-import Status from './pages/Status';
 
 export default function App() {
   return (
@@ -21,8 +19,6 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/subscribe" element={<Subscribe />} />
-          <Route path="/renew" element={<Renew />} />
-          <Route path="/status" element={<Status />} />
         </Routes>
       </div>
     </BrowserRouter>

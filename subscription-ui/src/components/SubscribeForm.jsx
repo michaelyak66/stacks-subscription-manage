@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAuth, useOpenContractCall, useAccount } from "@micro-stacks/react";
-import { uintCV } from "@stacks/transactions"; // Import uintCV from Clarity library
+import { uintCV, intCV, serializeCV } from "@stacks/transactions";
 import { Link } from "react-router-dom";
 
 const SubscribeForm = () => {
@@ -38,15 +38,14 @@ const SubscribeForm = () => {
         setLoading(false);
         return;
       }
-      
-      console.log("Attempting to subscribe with amount:", uintAmount);
-      const functionArgs = [uintCV(parseInt(amount))];
+      const functionArgs = [uintCV(uintAmount)];
+      const serializedArgs = functionArgs.map((arg) => serializeCV(arg));
 
       const contractCallOptions = {
         contractAddress: contractAddress, // Replace with your contract address
         contractName: contractName, // Replace with your contract name
         functionName: "subscribe",
-        functionArgs: functionArgs,
+        functionArgs: serializedArgs,
         // postConditionMode: 0x01, // Specify post-condition mode (optional)
         onFinish: (data) => {
           console.log("Transaction finished:", data);
@@ -56,7 +55,7 @@ const SubscribeForm = () => {
           setMessage("❌ Transaction canceled.");
         },
       };
-  
+
       // Open the contract call dialog
       await openContractCall(contractCallOptions);
     } catch (error) {
@@ -96,7 +95,7 @@ const SubscribeForm = () => {
             <input
               type="number"
               id="amount"
-              className="w-full p-3 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400"
+              className="w-full p-3 text-black rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400"
               placeholder="e.g. 10"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
