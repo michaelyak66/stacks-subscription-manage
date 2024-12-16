@@ -52,3 +52,41 @@
     subscription
     (ok (>= (get end-time subscription) block-height))
     (ok false)))
+
+(define-map referrals
+  { referrer: principal }
+  { total-referrals: uint, rewards-earned: uint })
+
+(define-public (subscribe-with-referral (amount uint) (referrer principal))
+  (begin
+    (try! (subscribe amount))
+    (match (map-get? referrals { referrer: referrer })
+      referral-data
+      (map-set referrals
+        { referrer: referrer }
+        { total-referrals: (+ (get total-referrals referral-data) u1),
+          rewards-earned: (+ (get rewards-earned referral-data) (/ amount u10)) })
+      (map-insert referrals
+        { referrer: referrer }
+        { total-referrals: u1, rewards-earned: (/ amount u10) }))
+    (ok true)))
+
+
+(define-map paused-subscriptions
+  { user: principal }
+  { pause-time: uint, remaining-time: uint })
+
+(define-public (pause-subscription)
+  (match (map-get? subscriptions { user: tx-sender })
+    subscription
+    (let ((current-time (unwrap-panic (get-block-info? time u0))))
+      (begin
+        (map-insert paused-subscriptions
+          { user: tx-sender }
+          { pause-time: current-time,
+            remaining-time: (- (get end-time subscription) current-time) })
+        (map-delete subscriptions { user: tx-sender })
+        (ok true)))
+    (err "No active subscription")))
+
+
