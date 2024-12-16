@@ -6,6 +6,16 @@
 Subscription Manager is an innovative system built on the blockchain that allows users to access premium services by locking tokens for a specific period. This decentralized subscription model provides a secure and transparent way for content creators, online communities, and newsletter publishers to offer exclusive access to their services.
 
 ## Key Features
+## Features
+
+### Here’s a demo of the Homepage:
+
+![Feature Demo](./screenshots/home.png)
+
+### Here’s a demo of the Subscription Page:
+![Feature Demo](./screenshots/subscribe.png)
+
+
 
 1. **Time-based Subscription Models**
    - Users can lock tokens for various durations (e.g., monthly, quarterly, annually)
