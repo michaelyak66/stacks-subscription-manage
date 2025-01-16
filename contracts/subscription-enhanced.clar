@@ -8,3 +8,13 @@
 (define-map subscription-tiers { tier-id: uint } { price: uint, duration: uint, benefits: (string-utf8 64) }) ;; Add tier definitions
 (define-constant GRACE-PERIOD u259200) ;; 3 days in seconds
 
+
+
+;; Modified subscribe function using contract-call
+(define-public (subscribe-with-tier (tier-id uint))
+  (match (map-get? subscription-tiers { tier-id: tier-id })
+    tier-data
+    (contract-call? .subscription subscribe (get price tier-data))
+    (err "Invalid tier")))
+
+
