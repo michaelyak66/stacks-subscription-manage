@@ -40,3 +40,15 @@
     (err "No active subscription")))
 
 
+
+(define-public (subscribe-bulk (amount uint) (months uint))
+  (let ((discount-rate (/ u1 u20)) ;; 5% discount
+        (total-amount (* amount months))
+        (discounted-amount (- total-amount (* total-amount discount-rate)))
+        (end-time (+ (unwrap-panic (get-block-info? time u0))
+                    (* (to-uint TOKEN-LOCK-DURATION) months))))
+    (begin
+      (map-insert subscriptions
+        { user: tx-sender }
+        { end-time: end-time, tokens-locked: discounted-amount })
+      (ok end-time))))
