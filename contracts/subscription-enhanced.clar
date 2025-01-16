@@ -25,3 +25,18 @@
     (ok (>= (+ (get end-time subscription) GRACE-PERIOD) block-height))
     (ok false)))
 
+
+(define-public (early-renew)
+  (match (map-get? subscriptions { user: tx-sender })
+    subscription
+    (let ((current-time (unwrap-panic (get-block-info? time u0)))
+          (bonus-threshold (- (get end-time subscription) u604800))) ;; 7 days before expiry
+      (if (< current-time bonus-threshold)
+          (let ((bonus-amount (/ (get tokens-locked subscription) u10)))
+            (begin
+              (try! (as-contract (contract-call? .subscription renew)))
+              (ok bonus-amount)))
+          (as-contract (contract-call? .subscription renew))))
+    (err "No active subscription")))
+
+
