@@ -18,3 +18,10 @@
     (err "Invalid tier")))
 
 
+
+(define-read-only (is-active (user principal))
+  (match (map-get? subscriptions { user: user })
+    subscription
+    (ok (>= (+ (get end-time subscription) GRACE-PERIOD) block-height))
+    (ok false)))
+
