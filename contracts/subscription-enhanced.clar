@@ -342,3 +342,256 @@
         { referral-count: (+ u1 (get referral-count current-refs)),
           tier-level: (calculate-tier-level (+ u1 (get referral-count current-refs))),
           rewards: (calculate-tier-rewards (+ u1 (get referral-count current-refs))) }))))
+
+;; ttt
+
+(define-map family-plans
+  { plan-id: uint }
+  { owner: principal, members: (list 5 principal), discount: uint })
+
+(define-constant FAMILY-DISCOUNT u25)
+(define-constant MAX-FAMILY-MEMBERS u5)
+
+(define-public (create-family-plan (members (list 5 principal)))
+  (let ((plan-id (+ u1 (default-to u0 (get-last-group-id)))))
+    (begin
+      (map-set family-plans
+        { plan-id: plan-id }
+        { owner: tx-sender, members: members, discount: FAMILY-DISCOUNT })
+      (ok plan-id))))
+
+(define-public (add-family-member (plan-id uint) (new-member principal))
+  (let ((plan (unwrap! (map-get? family-plans { plan-id: plan-id }) (err "Plan not found"))))
+    (if (is-eq (get owner plan) tx-sender)
+        (let ((current-members (get members plan))
+              (member-count (len (get members plan))))
+          (if (< member-count MAX-FAMILY-MEMBERS)
+              (ok (map-set family-plans
+                  { plan-id: plan-id }
+                  { owner: tx-sender, 
+                    members: (unwrap! (as-max-len? (concat current-members (list new-member)) u5) (err "List too long")), 
+                    discount: FAMILY-DISCOUNT }))
+              (err "Maximum family members reached")))
+        (err "Not the plan owner"))))
+
+
+
+
+(define-map subscription-pauses
+  { user: principal }
+  { paused-at: uint, remaining-time: uint, is-paused: bool })
+
+(define-constant MAX-PAUSE-DURATION u2592000) ;; 30 days in seconds
+
+(define-public (pause-subscription-v2)
+  (let ((current-time (unwrap-panic (get-block-info? time u0)))
+        (subscription (unwrap! (map-get? subscriptions { user: tx-sender }) (err "No active subscription"))))
+    (begin
+      (map-set subscription-pauses
+        { user: tx-sender }
+        { paused-at: current-time, 
+          remaining-time: (- (get end-time subscription) current-time),
+          is-paused: true })
+      (map-delete subscriptions { user: tx-sender })
+      (ok true))))
+
+(define-public (resume-subscription)
+  (let ((current-time (unwrap-panic (get-block-info? time u0)))
+        (pause-data (unwrap! (map-get? subscription-pauses { user: tx-sender }) (err "No paused subscription"))))
+    (if (get is-paused pause-data)
+        (begin
+          (map-set subscriptions
+            { user: tx-sender }
+            { end-time: (+ current-time (get remaining-time pause-data)), 
+              tokens-locked: u0 })
+          (map-set subscription-pauses
+            { user: tx-sender }
+            { paused-at: u0, remaining-time: u0, is-paused: false })
+          (ok true))
+        (err "Subscription not paused"))))
+
+
+
+(define-map auto-renewal-settings
+  { user: principal }
+  { enabled: bool, last-updated: uint })
+
+(define-public (set-auto-renewal (enabled bool))
+  (let ((current-time (unwrap-panic (get-block-info? time u0))))
+    (begin
+      (map-set auto-renewal-settings
+        { user: tx-sender }
+        { enabled: enabled, last-updated: current-time })
+      (ok enabled))))
+
+(define-read-only (get-auto-renewal-status (user principal))
+  (default-to { enabled: true, last-updated: u0 }
+              (map-get? auto-renewal-settings { user: user })))
+
+(define-public (process-auto-renewals)
+  (let ((current-time (unwrap-panic (get-block-info? time u0)))
+        (subscription (unwrap! (map-get? subscriptions { user: tx-sender }) (err "No subscription")))
+        (renewal-setting (get-auto-renewal-status tx-sender)))
+    (if (and (get enabled renewal-setting)
+             (< (get end-time subscription) current-time))
+        (as-contract (contract-call? .subscription renew))
+        (err "Auto-renewal not needed or disabled"))))
+
+
+
+(define-map rewards-program
+  { user: principal }
+  { points: uint, streak-months: uint, last-reward: uint })
+
+(define-constant POINTS-PER-STREAK u50)
+(define-constant POINTS-REDEMPTION-RATE u100) ;; 100 points = 1 STX
+
+(define-public (calculate-streak-rewards)
+  (let ((current-time (unwrap-panic (get-block-info? time u0)))
+        (rewards (default-to { points: u0, streak-months: u0, last-reward: u0 }
+                 (map-get? rewards-program { user: tx-sender })))
+        (subscription (unwrap! (map-get? subscriptions { user: tx-sender }) (err "No subscription"))))
+    (if (> (get end-time subscription) current-time)
+        (ok (map-set rewards-program
+            { user: tx-sender }
+            { points: (+ (get points rewards) POINTS-PER-STREAK),
+              streak-months: (+ u1 (get streak-months rewards)),
+              last-reward: current-time }))
+        (err "Subscription not active"))))
+
+(define-public (redeem-reward-points (points-to-redeem uint))
+  (let ((rewards (unwrap! (map-get? rewards-program { user: tx-sender }) (err "No rewards"))))
+    (if (>= (get points rewards) points-to-redeem)
+        (ok (map-set rewards-program
+            { user: tx-sender }
+            { points: (- (get points rewards) points-to-redeem),
+              streak-months: (get streak-months rewards),
+              last-reward: (get last-reward rewards) }))
+        (err "Insufficient points"))))
+
+
+(define-map volume-discounts
+  { tier: uint }
+  { min-quantity: uint, discount-percent: uint })
+
+(define-public (initialize-volume-discounts)
+  (begin
+    (map-set volume-discounts { tier: u1 } { min-quantity: u5, discount-percent: u5 })
+    (map-set volume-discounts { tier: u2 } { min-quantity: u10, discount-percent: u10 })
+    (map-set volume-discounts { tier: u3 } { min-quantity: u20, discount-percent: u15 })
+    (ok true)))
+
+(define-read-only (calculate-volume-discount (quantity uint))
+  (let ((tier-1 (default-to { min-quantity: u5, discount-percent: u5 } 
+                (map-get? volume-discounts { tier: u1 })))
+        (tier-2 (default-to { min-quantity: u10, discount-percent: u10 } 
+                (map-get? volume-discounts { tier: u2 })))
+        (tier-3 (default-to { min-quantity: u20, discount-percent: u15 } 
+                (map-get? volume-discounts { tier: u3 }))))
+    (if (>= quantity (get min-quantity tier-3))
+        (get discount-percent tier-3)
+        (if (>= quantity (get min-quantity tier-2))
+            (get discount-percent tier-2)
+            (if (>= quantity (get min-quantity tier-1))
+                (get discount-percent tier-1)
+                u0)))))
+
+(define-public (bulk-purchase (tier-id uint) (quantity uint))
+  (let ((tier-data (unwrap! (map-get? subscription-tiers { tier-id: tier-id }) (err "Invalid tier")))
+        (discount-percent (calculate-volume-discount quantity))
+        (base-price (* (get price tier-data) quantity))
+        (discount-amount (/ (* base-price discount-percent) u100))
+        (final-price (- base-price discount-amount)))
+    (begin
+      (try! (contract-call? .subscription subscribe final-price))
+      (ok final-price))))
+
+
+  
+
+  (define-map scheduled-gifts
+  { gift-id: uint }
+  { sender: principal, recipient: principal, tier-id: uint, delivery-time: uint, message: (string-utf8 280), delivered: bool })
+
+(define-map gift-id-counter
+  { counter: (string-utf8 5) }
+  { value: uint })
+
+(define-read-only (get-next-gift-id)
+  (+ u1 (default-to u0 (get value (map-get? gift-id-counter { counter: u"gifts" })))))
+
+(define-public (schedule-gift (recipient principal) (tier-id uint) (delivery-time uint) (message (string-utf8 280)))
+  (let ((gift-id (get-next-gift-id)))
+    (begin
+      (map-set scheduled-gifts
+        { gift-id: gift-id }
+        { sender: tx-sender, 
+          recipient: recipient, 
+          tier-id: tier-id, 
+          delivery-time: delivery-time, 
+          message: message, 
+          delivered: false })
+      (map-set gift-id-counter { counter: u"gifts" } { value: gift-id })
+      (ok gift-id))))
+
+(define-public (deliver-gift (gift-id uint))
+  (let ((gift (unwrap! (map-get? scheduled-gifts { gift-id: gift-id }) (err "Gift not found")))
+        (current-time (unwrap-panic (get-block-info? time u0))))
+    (if (and (not (get delivered gift)) 
+             (>= current-time (get delivery-time gift)))
+        (begin
+          (try! (gift-subscription (get recipient gift) (get tier-id gift)))
+          (map-set scheduled-gifts
+            { gift-id: gift-id }
+            { sender: (get sender gift), 
+              recipient: (get recipient gift), 
+              tier-id: (get tier-id gift), 
+              delivery-time: (get delivery-time gift), 
+              message: (get message gift), 
+              delivered: true })
+          (ok true))
+        (err "Gift not ready for delivery or already delivered"))))
+
+
+
+
+
+(define-map subscription-milestones
+  { milestone-id: uint }
+  { months-required: uint, reward-points: uint, description: (string-utf8 100) })
+
+(define-map user-milestones
+  { user: principal, milestone-id: uint }
+  { achieved: bool, achieved-at: uint })
+
+(define-public (initialize-milestones)
+  (begin
+    (map-set subscription-milestones 
+      { milestone-id: u1 } 
+      { months-required: u3, reward-points: u100, description: u"3 Month Subscriber" })
+    (map-set subscription-milestones 
+      { milestone-id: u2 } 
+      { months-required: u6, reward-points: u250, description: u"6 Month Subscriber" })
+    (map-set subscription-milestones 
+      { milestone-id: u3 } 
+      { months-required: u12, reward-points: u500, description: u"1 Year Subscriber" })
+    (ok true)))
+
+(define-public (check-milestone-achievement (milestone-id uint))
+  (let ((milestone (unwrap! (map-get? subscription-milestones { milestone-id: milestone-id }) 
+                           (err "Milestone not found")))
+        (rewards (default-to { points: u0, streak-months: u0, last-reward: u0 }
+                 (map-get? rewards-program { user: tx-sender })))
+        (current-time (unwrap-panic (get-block-info? time u0))))
+    (if (>= (get streak-months rewards) (get months-required milestone))
+        (begin
+          (map-set user-milestones
+            { user: tx-sender, milestone-id: milestone-id }
+            { achieved: true, achieved-at: current-time })
+          (map-set rewards-program
+            { user: tx-sender }
+            { points: (+ (get points rewards) (get reward-points milestone)),
+              streak-months: (get streak-months rewards),
+              last-reward: current-time })
+          (ok true))
+        (err "Milestone requirements not met"))))
