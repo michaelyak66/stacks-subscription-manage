@@ -595,3 +595,228 @@
               last-reward: current-time })
           (ok true))
         (err "Milestone requirements not met"))))
+
+      
+  
+
+(define-map user-tier-history
+  { user: principal }
+  { current-tier: uint, previous-tier: uint, last-changed: uint })
+
+(define-constant TIER-CHANGE-COOLDOWN u604800) ;; 7 days in seconds
+
+(define-read-only (get-user-current-tier (user principal))
+  (default-to u1 (get current-tier (map-get? user-tier-history { user: user }))))
+
+(define-read-only (calculate-remaining-value (user principal))
+  (match (map-get? subscriptions { user: user })
+    subscription
+    (let ((current-time (unwrap-panic (get-block-info? time u0)))
+          (end-time (get end-time subscription))
+          (tokens-locked (get tokens-locked subscription)))
+      (if (> end-time current-time)
+          (let ((total-duration (- end-time (- end-time (get tokens-locked subscription))))
+                (remaining-duration (- end-time current-time)))
+            (/ (* tokens-locked remaining-duration) total-duration))
+          u0))
+    u0))
+
+(define-public (change-subscription-tier (new-tier-id uint))
+  (let ((current-time (unwrap-panic (get-block-info? time u0)))
+        (user-history (default-to { current-tier: u1, previous-tier: u0, last-changed: u0 } 
+                      (map-get? user-tier-history { user: tx-sender })))
+        (new-tier (unwrap! (map-get? subscription-tiers { tier-id: new-tier-id }) 
+                          (err "Invalid tier")))
+        (remaining-value (calculate-remaining-value tx-sender)))
+    
+    (asserts! (> (- current-time (get last-changed user-history)) TIER-CHANGE-COOLDOWN) 
+              (err "Tier change cooldown period not elapsed"))
+    
+    (asserts! (not (is-eq (get current-tier user-history) new-tier-id)) 
+              (err "Already subscribed to this tier"))
+    
+    (let ((price-difference (- (get price new-tier) remaining-value)))
+      (begin
+        ;; If upgrading (price difference is positive), charge the difference
+        ;; If downgrading (price difference is negative), extend subscription duration
+        (try! (if (> price-difference u0)
+            (contract-call? .subscription subscribe price-difference)
+            (ok u0)))
+        
+        ;; Update subscription record
+        (map-set subscriptions
+          { user: tx-sender }
+          { end-time: (+ current-time (get duration new-tier)), 
+            tokens-locked: (get price new-tier) })
+        
+        ;; Update tier history
+        (map-set user-tier-history
+          { user: tx-sender }
+          { current-tier: new-tier-id, 
+            previous-tier: (get current-tier user-history), 
+            last-changed: current-time })
+        
+        (ok new-tier-id)))))
+
+
+
+(define-map subscription-analytics
+  { period: uint }  ;; Period is a timestamp for the day (truncated to days)
+  { 
+    active-subscriptions: uint,
+    new-subscriptions: uint,
+    renewals: uint,
+    cancellations: uint,
+    upgrades: uint,
+    downgrades: uint,
+    total-revenue: uint
+  })
+
+(define-map user-subscription-events
+  { user: principal }
+  { 
+    first-subscription: uint,
+    last-renewal: uint,
+    subscription-count: uint,
+    tier-changes: uint
+  })
+
+(define-read-only (get-current-period)
+  (let ((current-time (unwrap-panic (get-block-info? time u0))))
+    ;; Truncate to day (86400 seconds in a day)
+    (/ current-time u86400)))
+
+(define-read-only (get-period-analytics (period uint))
+  (default-to 
+    { 
+      active-subscriptions: u0,
+      new-subscriptions: u0,
+      renewals: u0,
+      cancellations: u0,
+      upgrades: u0,
+      downgrades: u0,
+      total-revenue: u0
+    }
+    (map-get? subscription-analytics { period: period })))
+
+(define-public (track-subscription-event (event-type (string-ascii 20)) (amount uint))
+  (let ((current-period (get-current-period))
+         (current-analytics (get-period-analytics current-period))
+         (user-events (default-to 
+                        { 
+                          first-subscription: (unwrap-panic (get-block-info? time u0)),
+                          last-renewal: u0,
+                          subscription-count: u0,
+                          tier-changes: u0
+                        }
+                        (map-get? user-subscription-events { user: tx-sender }))))
+    
+    (begin
+      ;; Update the appropriate metric based on event type
+      (map-set subscription-analytics
+        { period: current-period }
+        (if (is-eq event-type "new")
+          {
+            active-subscriptions: (+ u1 (get active-subscriptions current-analytics)),
+            new-subscriptions: (+ u1 (get new-subscriptions current-analytics)),
+            renewals: (get renewals current-analytics),
+            cancellations: (get cancellations current-analytics),
+            upgrades: (get upgrades current-analytics),
+            downgrades: (get downgrades current-analytics),
+            total-revenue: (+ amount (get total-revenue current-analytics))
+          }
+          (if (is-eq event-type "renewal")
+          {
+            active-subscriptions: (get active-subscriptions current-analytics),
+            new-subscriptions: (get new-subscriptions current-analytics),
+            renewals: (+ u1 (get renewals current-analytics)),
+            cancellations: (get cancellations current-analytics),
+            upgrades: (get upgrades current-analytics),
+            downgrades: (get downgrades current-analytics),
+            total-revenue: (+ amount (get total-revenue current-analytics))
+          }
+          (if (is-eq event-type "cancel")
+          {
+            active-subscriptions: (- (get active-subscriptions current-analytics) u1),
+            new-subscriptions: (get new-subscriptions current-analytics),
+            renewals: (get renewals current-analytics),
+            cancellations: (+ u1 (get cancellations current-analytics)),
+            upgrades: (get upgrades current-analytics),
+            downgrades: (get downgrades current-analytics),
+            total-revenue: (get total-revenue current-analytics)
+          }
+          (if (is-eq event-type "upgrade")
+          {
+            active-subscriptions: (get active-subscriptions current-analytics),
+            new-subscriptions: (get new-subscriptions current-analytics),
+            renewals: (get renewals current-analytics),
+            cancellations: (get cancellations current-analytics),
+            upgrades: (+ u1 (get upgrades current-analytics)),
+            downgrades: (get downgrades current-analytics),
+            total-revenue: (+ amount (get total-revenue current-analytics))
+          }
+          (if (is-eq event-type "downgrade")
+          {
+            active-subscriptions: (get active-subscriptions current-analytics),
+            new-subscriptions: (get new-subscriptions current-analytics),
+            renewals: (get renewals current-analytics),
+            cancellations: (get cancellations current-analytics),
+            upgrades: (get upgrades current-analytics),
+            downgrades: (+ u1 (get downgrades current-analytics)),
+            total-revenue: (get total-revenue current-analytics)
+          }
+          current-analytics))))))
+      
+      ;; Update user events
+      (map-set user-subscription-events
+        { user: tx-sender }
+        (if (is-eq event-type "new")
+          {
+            first-subscription: (if (is-eq (get subscription-count user-events) u0)
+                                   (unwrap-panic (get-block-info? time u0))
+                                   (get first-subscription user-events)),
+            last-renewal: (get last-renewal user-events),
+            subscription-count: (+ u1 (get subscription-count user-events)),
+            tier-changes: (get tier-changes user-events)
+          }
+          (if (is-eq event-type "renewal")
+          {
+            first-subscription: (get first-subscription user-events),
+            last-renewal: (unwrap-panic (get-block-info? time u0)),
+            subscription-count: (get subscription-count user-events),
+            tier-changes: (get tier-changes user-events)
+          }
+          (if (is-eq event-type "upgrade")
+          {
+            first-subscription: (get first-subscription user-events),
+            last-renewal: (get last-renewal user-events),
+            subscription-count: (get subscription-count user-events),
+            tier-changes: (+ u1 (get tier-changes user-events))
+          }
+          (if (is-eq event-type "downgrade")
+          {
+            first-subscription: (get first-subscription user-events),
+            last-renewal: (get last-renewal user-events),
+            subscription-count: (get subscription-count user-events),
+            tier-changes: (+ u1 (get tier-changes user-events))
+          }
+          user-events)))))
+      
+      (ok true))))(define-read-only (get-user-subscription-history (user principal))  (default-to 
+    { 
+      first-subscription: u0,
+      last-renewal: u0,
+      subscription-count: u0,
+      tier-changes: u0
+    }
+    (map-get? user-subscription-events { user: user })))
+
+(define-read-only (get-analytics-for-range (start-period uint) (end-period uint))
+  (let ((periods (- end-period start-period)))
+    (if (> periods u30)
+        (err "Range too large")
+        (ok {
+          start-period: start-period,
+          end-period: end-period,
+          periods: periods
+        }))))
