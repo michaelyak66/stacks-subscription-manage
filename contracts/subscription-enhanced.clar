@@ -820,3 +820,26 @@
           end-period: end-period,
           periods: periods
         }))))
+
+
+(define-read-only (get-subscription-info (user principal))
+  (match (map-get? subscriptions { user: user })
+    subscription
+    (ok {
+      end-time: (get end-time subscription),
+      tokens-locked: (get tokens-locked subscription),
+      is-active: (>= (+ (get end-time subscription) GRACE-PERIOD) block-height),
+      user-tier: (get-user-tier user),
+      remaining-time: (if (> (get end-time subscription) (unwrap-panic (get-block-info? time u0)))
+                         (- (get end-time subscription) (unwrap-panic (get-block-info? time u0)))
+                         u0)
+    })
+    (err "No subscription found")))
+
+(define-public (transfer-subscription (new-owner principal) (end-time uint) (tokens-locked uint))
+  (begin
+    (map-delete subscriptions { user: tx-sender })
+    (map-set subscriptions
+      { user: new-owner }
+      { end-time: end-time, tokens-locked: tokens-locked })
+    (ok true)))
