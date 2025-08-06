@@ -24,6 +24,11 @@ epoch = 3.1
 path = 'contracts/subscription-transfer.clar'
 clarity_version = 3
 epoch = 3.0
+
+[contracts.subscription-analytics]
+path = 'contracts/subscription-analytics.clar'
+clarity_version = 3
+epoch = 3.0
 [repl.analysis]
 passes = ['check_checker']
 
