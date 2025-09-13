@@ -1,6 +1,26 @@
 ;; title: subscription-enhanced
 
 ;; Import the base contract
+
+;; Event types for subscription pause notifications
+(define-data-var subscription-pause-event 
+  { user: principal, action: (string-ascii 10), timestamp: uint }
+  { user: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM, action: "pause", timestamp: u0 })
+
+;; Private helper functions for event emission
+(define-private (emit-pause-notification (user principal))
+  (begin
+    (var-set subscription-pause-event 
+      { user: user, action: "pause", timestamp: (unwrap-panic (get-block-info? time u0)) })
+    (print (var-get subscription-pause-event))
+    true))
+
+(define-private (emit-resume-notification (user principal))
+  (begin
+    (var-set subscription-pause-event 
+      { user: user, action: "resume", timestamp: (unwrap-panic (get-block-info? time u0)) })
+    (print (var-get subscription-pause-event))
+    true))
 (as-contract (contract-call? .subscription subscribe u19))
 (as-contract (contract-call? .subscription renew))
 (define-constant TOKEN-LOCK-DURATION 2592000) ;; 30 days in seconds
@@ -393,6 +413,7 @@
           remaining-time: (- (get end-time subscription) current-time),
           is-paused: true })
       (map-delete subscriptions { user: tx-sender })
+      (emit-pause-notification tx-sender)
       (ok true))))
 
 (define-public (resume-subscription)
@@ -407,6 +428,7 @@
           (map-set subscription-pauses
             { user: tx-sender }
             { paused-at: u0, remaining-time: u0, is-paused: false })
+          (emit-resume-notification tx-sender)
           (ok true))
         (err "Subscription not paused"))))
 
@@ -820,3 +842,26 @@
           end-period: end-period,
           periods: periods
         }))))
+
+
+(define-read-only (get-subscription-info (user principal))
+  (match (map-get? subscriptions { user: user })
+    subscription
+    (ok {
+      end-time: (get end-time subscription),
+      tokens-locked: (get tokens-locked subscription),
+      is-active: (>= (+ (get end-time subscription) GRACE-PERIOD) block-height),
+      user-tier: (get-user-tier user),
+      remaining-time: (if (> (get end-time subscription) (unwrap-panic (get-block-info? time u0)))
+                         (- (get end-time subscription) (unwrap-panic (get-block-info? time u0)))
+                         u0)
+    })
+    (err "No subscription found")))
+
+(define-public (transfer-subscription (new-owner principal) (end-time uint) (tokens-locked uint))
+  (begin
+    (map-delete subscriptions { user: tx-sender })
+    (map-set subscriptions
+      { user: new-owner }
+      { end-time: end-time, tokens-locked: tokens-locked })
+    (ok true)))
