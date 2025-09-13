@@ -68,6 +68,11 @@ plan:
             path: "contracts\\subscription-analytics.clar"
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: subscription-insurance
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\subscription-insurance.clar"
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: subscription-transfer
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: "contracts\\subscription-transfer.clar"
